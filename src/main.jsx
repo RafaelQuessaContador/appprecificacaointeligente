@@ -11,13 +11,12 @@ async function req(path,opts={},tok=null){
   const txt=await res.text();
   return{ok:res.ok,status:res.status,data:txt?JSON.parse(txt):{}};
 }
-const login  =(e,p)    =>req('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:e,password:p})});
-const signup =(e,p,d)  =>req('/auth/v1/signup',{method:'POST',body:JSON.stringify({email:e,password:p,data:d})});
-const getAll =(t,tok)  =>req(`/rest/v1/${t}?select=*&order=created_at.asc`,{},tok);
+const login  =(e,p)=>req('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:e,password:p})});
+const signup =(e,p,d)=>req('/auth/v1/signup',{method:'POST',body:JSON.stringify({email:e,password:p,data:d})});
+const getAll =(t,tok)=>req(`/rest/v1/${t}?select=*&order=created_at.asc`,{},tok);
 const ins    =(t,tok,b)=>req(`/rest/v1/${t}`,{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
 const upd    =(t,tok,id,b)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
-const del    =(t,tok,id)  =>req(`/rest/v1/${t}?id=eq.${id}`,{method:'DELETE'},tok);
-
+const del    =(t,tok,id)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'DELETE'},tok);
 function calc(p,ft){
   const cdu=+p.direct_cost||0,vol=Math.max(+p.monthly_volume||1,1),cfu=ft/vol;
   const cvp=((+p.tax_pct||0)+(+p.commission_pct||0)+(+p.card_fee_pct||0)+(+p.default_rate_pct||0)+(+p.other_cv_pct||0))/100;
@@ -62,7 +61,6 @@ const Card=({title,value,sub,color=NAVY})=>(
     {sub&&<p style={{margin:0,fontSize:11,color:'#aaa'}}>{sub}</p>}
   </div>
 );
-
 function AuthScreen({onAuth}){
   const[mode,setMode]=useState('login');
   const[email,setEmail]=useState('');
@@ -110,7 +108,6 @@ function AuthScreen({onAuth}){
     </div>
   );
 }
-
 function ProdForm({prod,tok,uid,fixedTotal,onSave,onCancel}){
   const isNew=!prod?.id;
   const blank={name:'',direct_cost:'0',monthly_volume:'100',tax_pct:'8',commission_pct:'5',card_fee_pct:'2.5',default_rate_pct:'2',other_cv_pct:'0',desired_margin:'20',current_price:'0'};
@@ -160,7 +157,6 @@ function ProdForm({prod,tok,uid,fixedTotal,onSave,onCancel}){
     </div>
   );
 }
-
 function ProdDetail({prod,fixedTotal,onEdit,onBack}){
   const r=calc(prod,fixedTotal),sc=SEM[r.sem]||SEM.none;
   const[tab,setTab]=useState('res');
@@ -236,7 +232,6 @@ function ProdDetail({prod,fixedTotal,onEdit,onBack}){
     </div>
   );
 }
-
 function CostsScreen({costs,tok,uid,onUpdate}){
   const[name,setName]=useState('');
   const[amt,setAmt]=useState('');
