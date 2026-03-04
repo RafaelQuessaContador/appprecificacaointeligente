@@ -652,7 +652,7 @@ function App(){
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:13,fontWeight:700,color:sc.c}}>{sc.l}</span>
-                  <button onClick={async(e)=>{e.stopPropagation();if(window.confirm(`Excluir "${p.name}"?`)){await del('products',tok,p.id);load();}}} style={{background:'none',border:'none',color:'#3d3131',cursor:'pointer',fontSize:18,padding:'4px 6px'}} title="Excluir">🗑️</button>
+                  <button onClick={async(e)=>{e.stopPropagation();if(window.confirm(`Excluir "${p.name}"?`)){await del('products',tok,p.id);load();}}} style={{background:'#fff0ee',border:'1px solid #ecc',borderRadius:6,color:RED,cursor:'pointer',fontSize:11,fontWeight:700,padding:'4px 8px'}}>Excluir</button>
                 </div>
               </div>
             );})}
