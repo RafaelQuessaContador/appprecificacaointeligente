@@ -69,6 +69,11 @@ function AuthScreen({onAuth}){
   const[co,setCo]=useState('');
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState('');
+
+  const googleLogin=()=>{
+    window.location.href=`${SB}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}`;
+  };
+
   const submit=async()=>{
     if(!email||!pass){setErr('Preencha email e senha');return;}
     setErr('');setLoading(true);
@@ -87,6 +92,7 @@ function AuthScreen({onAuth}){
     }catch(e){setErr('Erro de conexão');}
     finally{setLoading(false);}
   };
+
   return(
     <div style={{minHeight:'100vh',background:`linear-gradient(135deg,${NAVY},#1B3A6B)`,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
       <div style={{background:'#fff',borderRadius:20,padding:36,width:'100%',maxWidth:400,boxShadow:'0 20px 60px #0005'}}>
@@ -94,6 +100,19 @@ function AuthScreen({onAuth}){
           <p style={{margin:'0 0 4px',fontSize:26,fontWeight:900}}><span style={{color:NAVY}}>Precificação </span><span style={{color:GOLD}}>Inteligente</span></p>
           <p style={{margin:0,fontSize:13,color:'#aaa'}}>Método dos 3Cs · Rafael Contador</p>
         </div>
+
+        {/* Botão Google */}
+        <button onClick={googleLogin} style={{width:'100%',padding:'11px',border:'1.5px solid #ddd',borderRadius:8,background:'#fff',cursor:'pointer',fontSize:14,fontWeight:600,color:'#444',display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:16}}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.1 0 5.8 1.1 8 2.9l6-6C34.5 3.1 29.6 1 24 1 14.8 1 7 6.7 3.7 14.6l7 5.4C12.4 13.8 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.1-10 6.1-17z"/><path fill="#FBBC05" d="M10.7 28.6A14.8 14.8 0 0 1 9.5 24c0-1.6.3-3.2.8-4.6l-7-5.4A23.9 23.9 0 0 0 .5 24c0 3.9.9 7.5 2.8 10.7l7.4-6.1z"/><path fill="#34A853" d="M24 47c5.4 0 10-1.8 13.3-4.8l-7.5-5.8c-1.8 1.2-4.1 2-5.8 2-6.3 0-11.6-4.3-13.5-10l-7.4 6.1C7 41.3 14.8 47 24 47z"/></svg>
+          Entrar com Google
+        </button>
+
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+          <div style={{flex:1,height:1,background:'#eee'}}/>
+          <span style={{fontSize:12,color:'#aaa'}}>ou</span>
+          <div style={{flex:1,height:1,background:'#eee'}}/>
+        </div>
+
         <div style={{display:'flex',background:'#f5f5f5',borderRadius:10,padding:4,marginBottom:22,gap:4}}>
           {[['login','Entrar'],['register','Criar Conta']].map(([m,l])=>(
             <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:'9px',border:'none',borderRadius:7,background:mode===m?NAVY:'transparent',color:mode===m?'#fff':'#777',fontWeight:700,cursor:'pointer',fontSize:13}}>{l}</button>
