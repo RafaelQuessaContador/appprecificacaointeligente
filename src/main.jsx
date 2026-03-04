@@ -645,13 +645,17 @@ function App(){
               <Btn ch="+ Criar Primeiro" onClick={()=>setAdding(true)} v="gold"/>
             </div>
             :products.map(p=>{const r=calc(p,fixedTotal),sc=SEM[r.sem]||SEM.none,tl=PROD_TYPES.find(t=>t.k===p.type);return(
-              <div key={p.id} onClick={()=>setSelected(p)} style={{background:'#fff',borderRadius:12,padding:'16px 20px',cursor:'pointer',boxShadow:'0 2px 6px #0001',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:`5px solid ${sc.c}`}}>
-                <div><p style={{margin:0,fontSize:15,fontWeight:700,color:NAVY}}>{sc.e} {p.name} <span style={{fontSize:11,color:'#aaa',fontWeight:400}}>{tl?.l}</span></p><p style={{margin:'3px 0 0',fontSize:12,color:'#aaa'}}>Ideal: {fR(r.pIdeal)} · MC%: {fP(r.mcP)} · PE: {r.peUnits} un.</p></div>
-                <div style={{textAlign:'right'}}><p style={{margin:0,fontSize:13,fontWeight:700,color:sc.c}}>{sc.l}</p><p style={{margin:'2px 0 0',fontSize:12,color:'#aaa'}}>→</p></div>
+              <div key={p.id} style={{background:'#fff',borderRadius:12,padding:'16px 20px',boxShadow:'0 2px 6px #0001',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:`5px solid ${sc.c}`}}>
+                <div onClick={()=>setSelected(p)} style={{flex:1,cursor:'pointer'}}>
+                  <p style={{margin:0,fontSize:15,fontWeight:700,color:NAVY}}>{sc.e} {p.name} <span style={{fontSize:11,color:'#aaa',fontWeight:400}}>{tl?.l}</span></p>
+                  <p style={{margin:'3px 0 0',fontSize:12,color:'#aaa'}}>Ideal: {fR(r.pIdeal)} · MC%: {fP(r.mcP)} · PE: {r.peUnits} un.</p>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:13,fontWeight:700,color:sc.c}}>{sc.l}</span>
+                  <button onClick={async(e)=>{e.stopPropagation();if(window.confirm(`Excluir "${p.name}"?`)){await del('products',tok,p.id);load();}}} style={{background:'none',border:'none',color:'#ccc',cursor:'pointer',fontSize:18,padding:'4px 6px'}} title="Excluir">🗑️</button>
+                </div>
               </div>
             );})}
-          </div>}
-        </>}
         {screen==='costs'&&!loading&&<CostsScreen costs={costs} tok={tok} uid={uid} onUpdate={load}/>}
         {screen==='recipe'&&!loading&&<RecipeCalc fixedTotal={fixedTotal}/>}
         {screen==='info'&&<InfoScreen/>}
