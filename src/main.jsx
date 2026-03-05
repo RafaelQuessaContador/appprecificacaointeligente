@@ -10,63 +10,78 @@ async function req(path,opts={},tok=null){
   const txt=await res.text();
   return{ok:res.ok,status:res.status,data:txt?JSON.parse(txt):{}};
 }
-const login  =(e,p)=>req('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:e,password:p})});
-const signup =(e,p,d)=>req('/auth/v1/signup',{method:'POST',body:JSON.stringify({email:e,password:p,data:d})});
-const resetPw=(e)=>req('/auth/v1/recover',{method:'POST',body:JSON.stringify({email:e})});
-const getAll =(t,tok)=>req(`/rest/v1/${t}?select=*&order=created_at.asc`,{},tok);
-const ins    =(t,tok,b)=>req(`/rest/v1/${t}`,{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
-const upd    =(t,tok,id,b)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
-const del    =(t,tok,id)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'DELETE'},tok);
-function calc(p,ft){
-  const cdu=+p.direct_cost||0,vol=Math.max(+p.monthly_volume||1,1),cfu=ft/vol;
-  const cvp=((+p.tax_pct||0)+(+p.commission_pct||0)+(+p.card_fee_pct||0)+(+p.default_rate_pct||0)+(+p.other_cv_pct||0))/100;
-  const ml=(+p.desired_margin||0)/100,base=cdu+cfu,dn=1-cvp-ml;
-  const pMin=cvp<1?base/(1-cvp):0,pIdeal=dn>0?base/dn:0;
-  const pv=+p.current_price>0?+p.current_price:pIdeal;
-  const mcU=pv-cdu-pv*cvp,mcP=pv>0?(mcU/pv)*100:0,pe=mcP>0?ft/(mcP/100):0;
-  const peUnits=mcU>0?Math.ceil(ft/mcU):0;
-  let sem='none';
-  if(+p.current_price>0) sem=+p.current_price<pMin?'red':+p.current_price>=pIdeal?'green':'yellow';
-  return{cdu,cfu,cvp:cvp*100,base,pMin,pIdeal,mkp:dn>0?1/dn:0,mcU,mcP,pe,peUnits,sem};
-}
-
-function calcPackageCost(pkgPrice,pkgQty,freight=0,loss=0){
-  const totalCost=(+pkgPrice||0)+(+freight||0);
-  const unitCost=+pkgQty>0?totalCost/+pkgQty:0;
-  const lossMulti=1+(+loss||0)/100;
-  return{unitCost,unitCostWithLoss:unitCost*lossMulti};
-}
-
-function calcRecipe(ingredients,ft,vol,cvp,ml){
-  const totalDirectCost=ingredients.reduce((s,i)=>{
-    const unitCost=+i.pkg_price>0&&+i.pkg_qty>0?(+i.pkg_price+(+i.pkg_freight||0))/+i.pkg_qty:+i.unit_cost||0;
-    const withLoss=unitCost*(1+(+i.loss_pct||0)/100);
-    return s+withLoss*(+i.qty_used||0);
-  },0);
-  const cfu=Math.max(+vol||1,1)>0?(+ft||0)/Math.max(+vol||1,1):0;
-  const base=totalDirectCost+cfu;
-  const dn=1-(+cvp||0)/100-(+ml||0)/100;
-  const pIdeal=dn>0?base/dn:0;
-  const pMin=(+cvp||0)/100<1?base/(1-(+cvp||0)/100):0;
-  return{totalDirectCost,cfu,base,pIdeal,pMin};
-}
+const login   =(e,p)    =>req('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:e,password:p})});
+const signup  =(e,p,d)  =>req('/auth/v1/signup',{method:'POST',body:JSON.stringify({email:e,password:p,data:d})});
+const resetPw =(e,url)  =>req('/auth/v1/recover',{method:'POST',body:JSON.stringify({email:e,redirect_to:url})});
+const getAll  =(t,tok,q='')=>req(`/rest/v1/${t}?select=*${q}&order=created_at.asc`,{},tok);
+const ins     =(t,tok,b)=>req(`/rest/v1/${t}`,{method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
+const upd     =(t,tok,id,b)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(b)},tok);
+const del     =(t,tok,id)=>req(`/rest/v1/${t}?id=eq.${id}`,{method:'DELETE'},tok);
+const delWhere=(t,tok,col,val)=>req(`/rest/v1/${t}?${col}=eq.${val}`,{method:'DELETE'},tok);
 
 const fN=(v,d=2)=>Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fR=v=>'R$ '+fN(v);
 const fP=v=>fN(v,1)+'%';
-const SEM={
-  green:{c:GRN,bg:'#EAFAEE',e:'🟢',l:'SAUDÁVEL'},
-  yellow:{c:YLW,bg:'#FFF8E0',e:'🟡',l:'ATENÇÃO'},
-  red:{c:RED,bg:'#FFF0EE',e:'🔴',l:'PREJUÍZO'},
-  none:{c:'#999',bg:'#f5f5f5',e:'⚪',l:'—'},
-};
-const PROD_TYPES=[
-  {k:'product',l:'📦 Produto'},
-  {k:'service',l:'🛠️ Serviço'},
-  {k:'hourly', l:'⏱️ Por Hora'},
-  {k:'monthly',l:'📅 Mensalidade'},
-];
+
+const PROD_TYPES=[{k:'product',l:'📦 Produto'},{k:'service',l:'🛠️ Serviço'},{k:'hourly',l:'⏱️ Por Hora'},{k:'monthly',l:'📅 Mensalidade'}];
+const UNITS=['un','kg','g','mg','l','ml','m','cm','mm','pacote','caixa','fardo','dose','porção'];
 const FIXED_COST_SUGGESTIONS=['Aluguel','Energia Elétrica','Água','Internet','Telefone','Pró-labore','Salários','Contador','Sistema/Software','Seguro','Manutenção','Marketing','Transporte','Outros'];
+const SEM={green:{c:GRN,bg:'#EAFAEE',e:'🟢',l:'SAUDÁVEL'},yellow:{c:YLW,bg:'#FFF8E0',e:'🟡',l:'ATENÇÃO'},red:{c:RED,bg:'#FFF0EE',e:'🔴',l:'PREJUÍZO'},none:{c:'#999',bg:'#f5f5f5',e:'⚪',l:'—'}};
+function calcFixed(products, fixedTotal) {
+  // Rateio compartilhado: divide pelo total de produtos com allocation_type='shared'
+  const sharedProds = products.filter(p => p.allocation_type !== 'individual');
+  const sharedQty   = sharedProds.reduce((s,p) => s + Math.max(+p.monthly_volume||1, 1), 0);
+  return products.map(p => {
+    if (p.allocation_type === 'individual') {
+      const qty = Math.max(+p.allocation_qty||1, 1);
+      return { ...p, _cfu: fixedTotal / qty };
+    }
+    const vol = Math.max(+p.monthly_volume||1, 1);
+    return { ...p, _cfu: sharedQty > 0 ? (fixedTotal * vol / sharedQty) : 0 };
+  });
+}
+
+function calc(p, cfu) {
+  const _cfu = cfu !== undefined ? cfu : (p._cfu || 0);
+  const cdu  = +p.direct_cost || 0;
+  const cvp  = ((+p.tax_pct||0)+(+p.commission_pct||0)+(+p.card_fee_pct||0)+(+p.default_rate_pct||0)+(+p.other_cv_pct||0)) / 100;
+  const ml   = (+p.desired_margin||0) / 100;
+  const base = cdu + _cfu;
+  const dn   = 1 - cvp - ml;
+  const pMin   = cvp < 1 ? base / (1 - cvp) : 0;
+  const pIdeal = dn > 0  ? base / dn : 0;
+  const pv   = +p.current_price > 0 ? +p.current_price : pIdeal;
+  const mcU  = pv - cdu - pv * cvp;
+  const mcP  = pv > 0 ? (mcU / pv) * 100 : 0;
+  const pe   = mcP > 0 ? (p._fixedShare || 0) / (mcP / 100) : 0;
+  const peUnits = mcU > 0 ? Math.ceil((p._fixedShare || 0) / mcU) : 0;
+  let sem = 'none';
+  if (+p.current_price > 0)
+    sem = +p.current_price < pMin ? 'red' : +p.current_price >= pIdeal ? 'green' : 'yellow';
+  return { cdu, cfu: _cfu, cvp: cvp*100, base, pMin, pIdeal, mkp: dn>0?1/dn:0, mcU, mcP, pe, peUnits, sem };
+}
+
+function calcRecipeIngredients(ings) {
+  return ings.map(i => {
+    const uc  = +i.pkg_price > 0 && +i.pkg_qty > 0 ? (+i.pkg_price + (+i.pkg_freight||0)) / +i.pkg_qty : +i.unit_cost||0;
+    const ucL = uc * (1 + (+i.loss_pct||0) / 100);
+    const total = ucL * (+i.qty_used||0);
+    return { ...i, uc, ucL, total };
+  });
+}
+
+function calcRecipe(ings, ft, vol, cvp, ml) {
+  const rows = calcRecipeIngredients(ings);
+  const totalDirectCost = rows.reduce((s,i) => s + i.total, 0);
+  const cfu  = Math.max(+vol||1,1) > 0 ? (+ft||0) / Math.max(+vol||1,1) : 0;
+  const base = totalDirectCost + cfu;
+  const dn   = 1 - (+cvp||0)/100 - (+ml||0)/100;
+  return {
+    rows, totalDirectCost, cfu, base,
+    pIdeal: dn > 0 ? base / dn : 0,
+    pMin:   (+cvp||0)/100 < 1 ? base / (1-(+cvp||0)/100) : 0,
+  };
+}
 const Btn=({ch,onClick,v='primary',sm,full,disabled})=>(
   <button onClick={onClick} disabled={disabled} style={{padding:sm?'8px 14px':'11px 22px',border:'none',borderRadius:8,cursor:disabled?'not-allowed':'pointer',fontWeight:700,fontSize:sm?12:14,width:full?'100%':'auto',background:v==='primary'?NAVY:v==='gold'?GOLD:v==='red'?RED:v==='green'?GRN:'#e8e8e8',color:v==='sec'?'#444':'#fff',opacity:disabled?0.6:1}}>{ch}</button>
 );
@@ -130,22 +145,26 @@ function AuthScreen({onAuth}){
       const token=params.get('access_token');
       if(token){
         req('/auth/v1/user',{},token).then(r=>{
-          if(r.ok)onAuth({token,user:r.data});
+          if(r.ok){
+            onAuth({token,user:r.data});
+            window.history.replaceState(null,'',window.location.pathname);
+          }
         });
       }
     }
   },[]);
 
   const googleLogin=()=>{
-    window.location.href=`${SB}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}`;
+    window.location.href=`${SB}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}${window.location.pathname}`;
   };
 
   const sendReset=async()=>{
     if(!fEmail){setErr('Informe seu email');return;}
     setLoading(true);setErr('');
-    await resetPw(fEmail);
-    setInfo('Email de recuperação enviado! Verifique sua caixa de entrada.');
-    setLoading(false);setForgot(false);
+    const redirectUrl=`${window.location.origin}${window.location.pathname}`;
+    await resetPw(fEmail,redirectUrl);
+    setInfo('Email enviado! Verifique sua caixa de entrada.');
+    setLoading(false);
   };
 
   const submit=async()=>{
@@ -171,12 +190,12 @@ function AuthScreen({onAuth}){
     <div style={{minHeight:'100vh',background:`linear-gradient(135deg,${NAVY},#1B3A6B)`,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
       <div style={{background:'#fff',borderRadius:20,padding:36,width:'100%',maxWidth:400,boxShadow:'0 20px 60px #0005'}}>
         <h3 style={{margin:'0 0 6px',color:NAVY}}>Recuperar Senha</h3>
-        <p style={{margin:'0 0 20px',fontSize:13,color:'#888'}}>Informe seu email e enviaremos um link para redefinir a senha.</p>
+        <p style={{margin:'0 0 20px',fontSize:13,color:'#888'}}>Informe seu email para receber o link de redefinição.</p>
         <Inp label="Email" val={fEmail} set={setFEmail} type="email" ph="seu@email.com"/>
         {err&&<p style={{color:RED,fontSize:13,background:'#fff0ee',padding:'10px 14px',borderRadius:8,margin:'0 0 14px'}}>{err}</p>}
         {info&&<p style={{color:GRN,fontSize:13,background:'#eafaee',padding:'10px 14px',borderRadius:8,margin:'0 0 14px'}}>{info}</p>}
         <div style={{display:'flex',gap:10}}>
-          <Btn ch="← Voltar" onClick={()=>setForgot(false)} v="sec" full/>
+          <Btn ch="← Voltar" onClick={()=>{setForgot(false);setInfo('');setErr('');}} v="sec" full/>
           <Btn ch={loading?'Enviando...':'Enviar Link'} onClick={sendReset} v="gold" full disabled={loading}/>
         </div>
       </div>
@@ -213,143 +232,133 @@ function AuthScreen({onAuth}){
     </div>
   );
 }
-function PackageCalc(){
-  const[pkgPrice,setPkgPrice]=useState('');
-  const[pkgQty,setPkgQty]=useState('');
-  const[freight,setFreight]=useState('0');
-  const[loss,setLoss]=useState('0');
-  const r=calcPackageCost(pkgPrice,pkgQty,freight,loss);
-  return(
-    <div style={{background:'#fff',borderRadius:12,padding:24,marginTop:16}}>
-      <h4 style={{margin:'0 0 4px',color:NAVY,fontSize:15}}>📦 Custo Unitário de Pacote</h4>
-      <p style={{margin:'0 0 16px',fontSize:13,color:'#888'}}>Para itens comprados em pacote, caixa ou fardo</p>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <Inp label="Preço do pacote" val={pkgPrice} set={setPkgPrice} pre="R$"/>
-        <Inp label="Quantidade no pacote" val={pkgQty} set={setPkgQty} pre="un."/>
-        <Inp label="Frete (opcional)" val={freight} set={setFreight} pre="R$"/>
-        <Inp label="Perda/Desperdício" val={loss} set={setLoss} pre="%" hint="Ex: 5 para 5%"/>
-      </div>
-      {r.unitCost>0&&(
-        <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}}>
-          <Card title="Custo Unitário" value={fR(r.unitCost)} color={NAVY}/>
-          <Card title="Com Perda Ajustada" value={fR(r.unitCostWithLoss)} color={+loss>0?YLW:NAVY}/>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RecipeCalc({fixedTotal}){
-  const[name,setName]=useState('');
-  const[vol,setVol]=useState('100');
-  const[cvp,setCvp]=useState('17.5');
-  const[ml,setMl]=useState('20');
-  const[ings,setIngs]=useState([{id:1,name:'',pkg_price:'',pkg_qty:'',pkg_freight:'0',loss_pct:'0',qty_used:''}]);
-  const nextId=()=>Math.max(...ings.map(i=>i.id))+1;
-  const addIng=()=>setIngs(x=>[...x,{id:nextId(),name:'',pkg_price:'',pkg_qty:'',pkg_freight:'0',loss_pct:'0',qty_used:''}]);
+function IngredientsForm({productId, tok, uid, existingIngs, onSave}){
+  const[ings,setIngs]=useState(existingIngs&&existingIngs.length>0?existingIngs:[{id:'new_1',name:'',pkg_price:'',pkg_qty:'',pkg_freight:'0',loss_pct:'0',qty_used:'',unit:'un'}]);
+  const[saving,setSaving]=useState(false);
+  const nextId=()=>'new_'+Date.now();
+  const addIng=()=>setIngs(x=>[...x,{id:nextId(),name:'',pkg_price:'',pkg_qty:'',pkg_freight:'0',loss_pct:'0',qty_used:'',unit:'un'}]);
   const setIng=(id,k,v)=>setIngs(x=>x.map(i=>i.id===id?{...i,[k]:v}:i));
   const remIng=id=>setIngs(x=>x.filter(i=>i.id!==id));
-  const r=calcRecipe(ings,fixedTotal,vol,cvp,ml);
-  const ingRows=ings.map(i=>{
-    const uc=+i.pkg_price>0&&+i.pkg_qty>0?(+i.pkg_price+(+i.pkg_freight||0))/+i.pkg_qty:0;
-    const ucL=uc*(1+(+i.loss_pct||0)/100);
-    const total=ucL*(+i.qty_used||0);
-    return{...i,uc,ucL,total};
-  });
-  const totalDirect=ingRows.reduce((s,i)=>s+i.total,0);
+  const rows=calcRecipeIngredients(ings);
+  const totalDirect=rows.reduce((s,i)=>s+i.total,0);
+
+  const save=async()=>{
+    setSaving(true);
+    await delWhere('ingredients',tok,'product_id',productId);
+    const valid=ings.filter(i=>i.name.trim()&&+i.qty_used>0);
+    for(const i of valid){
+      await ins('ingredients',tok,{
+        product_id:productId, user_id:uid,
+        name:i.name.trim(), pkg_price:+i.pkg_price||0,
+        pkg_qty:+i.pkg_qty||1, pkg_freight:+i.pkg_freight||0,
+        loss_pct:+i.loss_pct||0, qty_used:+i.qty_used||0, unit:i.unit||'un'
+      });
+    }
+    setSaving(false);
+    onSave(valid);
+  };
+
   return(
-    <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <h2 style={{margin:0,color:NAVY}}>🍽️ Ficha Técnica</h2>
-      <div style={{background:'#fff',borderRadius:12,padding:24}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12,marginBottom:16}}>
-          <Inp label="Nome do Produto" val={name} set={setName} type="text" ph="Ex: Bolo de Chocolate"/>
-          <Inp label="Volume Mensal" val={vol} set={setVol} pre="un."/>
-          <Inp label="Total CV%" val={cvp} set={setCvp} pre="%" hint="Impostos+comissão+cartão"/>
-          <Inp label="Margem Desejada" val={ml} set={setMl} pre="%"/>
-        </div>
-        <h4 style={{margin:'0 0 12px',color:NAVY,fontSize:14}}>Insumos</h4>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-            <thead>
-              <tr style={{background:'#f0f4ff'}}>
-                {['Insumo','Preço Pacote','Qtd Pacote','Frete','Perda%','Qtd Usada','Custo Unit.','c/Perda','Total',''].map(h=>(
-                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:11,fontWeight:700,color:'#666',whiteSpace:'nowrap'}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ingRows.map(i=>(
-                <tr key={i.id} style={{borderBottom:'1px solid #f0f0f0'}}>
-                  <td style={{padding:'6px 4px'}}><input value={i.name} onChange={e=>setIng(i.id,'name',e.target.value)} placeholder="Ex: Farinha" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:100,fontSize:13}}/></td>
-                  <td style={{padding:'6px 4px'}}><input type="number" value={i.pkg_price} onChange={e=>setIng(i.id,'pkg_price',e.target.value)} placeholder="0,00" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:80,fontSize:13}}/></td>
-                  <td style={{padding:'6px 4px'}}><input type="number" value={i.pkg_qty} onChange={e=>setIng(i.id,'pkg_qty',e.target.value)} placeholder="un." style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:70,fontSize:13}}/></td>
-                  <td style={{padding:'6px 4px'}}><input type="number" value={i.pkg_freight} onChange={e=>setIng(i.id,'pkg_freight',e.target.value)} placeholder="0,00" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:70,fontSize:13}}/></td>
-                  <td style={{padding:'6px 4px'}}><input type="number" value={i.loss_pct} onChange={e=>setIng(i.id,'loss_pct',e.target.value)} placeholder="0" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:60,fontSize:13}}/></td>
-                  <td style={{padding:'6px 4px'}}><input type="number" value={i.qty_used} onChange={e=>setIng(i.id,'qty_used',e.target.value)} placeholder="0" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:70,fontSize:13}}/></td>
-                  <td style={{padding:'6px 10px',color:'#555'}}>{fR(i.uc)}</td>
-                  <td style={{padding:'6px 10px',color:+i.loss_pct>0?YLW:'#555'}}>{fR(i.ucL)}</td>
-                  <td style={{padding:'6px 10px',fontWeight:700,color:NAVY}}>{fR(i.total)}</td>
-                  <td><button onClick={()=>remIng(i.id)} style={{background:'none',border:'none',color:'#ccc',cursor:'pointer',fontSize:16}}>✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{marginTop:12}}><Btn ch="+ Adicionar Insumo" onClick={addIng} v="sec" sm/></div>
+    <div style={{marginTop:20,borderTop:'2px dashed #e0e0e0',paddingTop:20}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <h4 style={{margin:0,color:NAVY,fontSize:14}}>🧪 Ficha Técnica — Insumos</h4>
+        {totalDirect>0&&<span style={{fontSize:13,fontWeight:700,color:RED}}>Custo direto total: {fR(totalDirect)}</span>}
       </div>
-      {totalDirect>0&&(
-        <div style={{background:'#fff',borderRadius:12,padding:24}}>
-          <h4 style={{margin:'0 0 16px',color:NAVY,fontSize:15}}>Resultado — {name||'Produto'}</h4>
-          <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16}}>
-            <Card title="Custo Direto Total" value={fR(totalDirect)} color={RED}/>
-            <Card title="Custo Fixo Rateado" value={fR(r.cfu)} color={YLW}/>
-            <Card title="Custo Total Unitário" value={fR(r.base)} color={NAVY}/>
-            <Card title="Preço Mínimo" value={fR(r.pMin)} color={RED}/>
-            <Card title="Preço Ideal" value={fR(r.pIdeal)} color={GRN}/>
-          </div>
-          <div style={{background:'#f8f9fc',borderRadius:10,padding:16}}>
-            <h5 style={{margin:'0 0 10px',color:NAVY,fontSize:13}}>Composição por insumo</h5>
-            {ingRows.filter(i=>i.name&&i.total>0).map(i=>{
-              const pct=totalDirect>0?(i.total/totalDirect)*100:0;
-              return<div key={i.id} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                  <span style={{fontSize:12,color:'#555'}}>{i.name}</span>
-                  <span style={{fontSize:12,fontWeight:700}}>{fR(i.total)} <span style={{color:'#aaa',fontWeight:400}}>({fP(pct)})</span></span>
-                </div>
-                <div style={{background:'#e8e8e8',borderRadius:4,height:6}}><div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:NAVY,borderRadius:4}}/></div>
-              </div>;
-            })}
-          </div>
-        </div>
-      )}
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead>
+            <tr style={{background:'#f0f4ff'}}>
+              {['Insumo','Unid.','Preço Pacote','Qtd Pacote','Frete','Perda%','Qtd Usada','Custo Unit.','c/Perda','Total',''].map(h=>(
+                <th key={h} style={{padding:'8px 8px',textAlign:'left',fontSize:11,fontWeight:700,color:'#666',whiteSpace:'nowrap'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(i=>(
+              <tr key={i.id} style={{borderBottom:'1px solid #f0f0f0'}}>
+                <td style={{padding:'4px'}}><input value={i.name} onChange={e=>setIng(i.id,'name',e.target.value)} placeholder="Ex: Farinha" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 8px',width:90,fontSize:12}}/></td>
+                <td style={{padding:'4px'}}>
+                  <select value={i.unit||'un'} onChange={e=>setIng(i.id,'unit',e.target.value)} style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 4px',fontSize:12,width:60}}>
+                    {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+                  </select>
+                </td>
+                <td style={{padding:'4px'}}><input type="number" value={i.pkg_price} onChange={e=>setIng(i.id,'pkg_price',e.target.value)} placeholder="0,00" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 6px',width:75,fontSize:12}}/></td>
+                <td style={{padding:'4px'}}><input type="number" value={i.pkg_qty} onChange={e=>setIng(i.id,'pkg_qty',e.target.value)} placeholder="un." style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 6px',width:65,fontSize:12}}/></td>
+                <td style={{padding:'4px'}}><input type="number" value={i.pkg_freight} onChange={e=>setIng(i.id,'pkg_freight',e.target.value)} placeholder="0,00" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 6px',width:65,fontSize:12}}/></td>
+                <td style={{padding:'4px'}}><input type="number" value={i.loss_pct} onChange={e=>setIng(i.id,'loss_pct',e.target.value)} placeholder="0" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 6px',width:55,fontSize:12}}/></td>
+                <td style={{padding:'4px'}}><input type="number" value={i.qty_used} onChange={e=>setIng(i.id,'qty_used',e.target.value)} placeholder="0" style={{border:'1px solid #ddd',borderRadius:6,padding:'6px 6px',width:65,fontSize:12}}/></td>
+                <td style={{padding:'6px 8px',color:'#555',whiteSpace:'nowrap'}}>{fR(i.uc)}</td>
+                <td style={{padding:'6px 8px',color:+i.loss_pct>0?YLW:'#555',whiteSpace:'nowrap'}}>{fR(i.ucL)}</td>
+                <td style={{padding:'6px 8px',fontWeight:700,color:NAVY,whiteSpace:'nowrap'}}>{fR(i.total)}</td>
+                <td style={{padding:'4px'}}><button onClick={()=>remIng(i.id)} style={{background:'none',border:'none',color:'#ccc',cursor:'pointer',fontSize:16}}>✕</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{display:'flex',gap:10,marginTop:12,alignItems:'center'}}>
+        <Btn ch="+ Insumo" onClick={addIng} v="sec" sm/>
+        <Btn ch={saving?'Salvando insumos...':'💾 Salvar Insumos'} onClick={save} v="gold" sm disabled={saving}/>
+      </div>
     </div>
   );
 }
-function ProdForm({prod,tok,uid,fixedTotal,onSave,onCancel}){
+function ProdForm({prod,tok,uid,products,fixedTotal,onSave,onCancel,onDelete}){
   const isNew=!prod?.id;
-  const blank={name:'',type:'product',direct_cost:'0',monthly_volume:'100',tax_pct:'8',commission_pct:'5',card_fee_pct:'2.5',default_rate_pct:'2',other_cv_pct:'0',desired_margin:'20',current_price:'0'};
+  const blank={name:'',type:'product',direct_cost:'0',monthly_volume:'100',tax_pct:'8',commission_pct:'5',card_fee_pct:'2.5',default_rate_pct:'2',other_cv_pct:'0',desired_margin:'20',current_price:'0',allocation_type:'shared',allocation_qty:'1'};
   const[f,setF]=useState(prod||blank);
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState('');
+  const[showIngs,setShowIngs]=useState(false);
+  const[ings,setIngs]=useState([]);
+  const[savedId,setSavedId]=useState(prod?.id||null);
+  const[delConfirm,setDelConfirm]=useState(false);
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
-  const r=calc(f,fixedTotal);
-  const typeLabel={product:'Custo Direto / Unidade',service:'Custo Direto / Serviço',hourly:'Custo por Hora (mão de obra)',monthly:'Custo Direto por Cliente'};
-  const volLabel={product:'Volume Mensal (unidades)',service:'Serviços por Mês',hourly:'Horas Vendidas por Mês',monthly:'Clientes Mensalistas'};
+
+  // Rateio: se shared, cfu = fixedTotal / soma volumes de todos shared
+  const sharedVol=products.filter(p=>p.allocation_type!=='individual'&&p.id!==prod?.id).reduce((s,p)=>s+Math.max(+p.monthly_volume||1,1),0)+(f.allocation_type!=='individual'?Math.max(+f.monthly_volume||1,1):0);
+  const cfu=f.allocation_type==='individual'?fixedTotal/Math.max(+f.allocation_qty||1,1):sharedVol>0?(fixedTotal*Math.max(+f.monthly_volume||1,1)/sharedVol):0;
+  const r=calc(f,cfu);
+
+  useEffect(()=>{
+    if(prod?.id){
+      getAll('ingredients',tok,`&product_id=eq.${prod.id}`).then(res=>{
+        if(Array.isArray(res.data))setIngs(res.data);
+      });
+    }
+  },[prod?.id]);
+
   const save=async()=>{
     if(!f.name.trim()){setErr('Informe o nome');return;}
     setLoading(true);setErr('');
     const body={...f,user_id:uid,updated_at:new Date().toISOString()};
     const res=isNew?await ins('products',tok,body):await upd('products',tok,prod.id,body);
     setLoading(false);
-    if(!res.ok){setErr('Erro ao salvar. Verifique se o SQL foi executado no Supabase.');return;}
-    onSave(Array.isArray(res.data)?res.data[0]:res.data);
+    if(!res.ok){setErr('Erro ao salvar.');return;}
+    const saved=Array.isArray(res.data)?res.data[0]:res.data;
+    setSavedId(saved?.id||prod?.id);
+    onSave(saved);
   };
+
+  const doDelete=async()=>{
+    await delWhere('ingredients',tok,'product_id',prod.id);
+    await del('products',tok,prod.id);
+    onDelete();
+  };
+
+  const typeLabel={product:'Custo Direto / Unidade',service:'Custo Direto / Serviço',hourly:'Custo por Hora',monthly:'Custo Direto por Cliente'};
+  const volLabel={product:'Volume Mensal (unidades)',service:'Serviços por Mês',hourly:'Horas Vendidas por Mês',monthly:'Clientes Mensalistas'};
   const F2=(k,label,pre,hint)=><Inp key={k} label={label} val={f[k]||''} set={v=>s(k,v)} pre={pre} hint={hint}/>;
+
   return(
     <div style={{background:'#fff',borderRadius:14,padding:28,boxShadow:'0 2px 12px #0002'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:22}}>
         <h2 style={{margin:0,color:NAVY,fontSize:18}}>{isNew?'+ Novo':'Editar'}</h2>
-        <Btn ch="Cancelar" onClick={onCancel} v="sec" sm/>
+        <div style={{display:'flex',gap:8}}>
+          {!isNew&&!delConfirm&&<Btn ch="🗑️ Excluir" onClick={()=>setDelConfirm(true)} v="red" sm/>}
+          {delConfirm&&<><span style={{fontSize:13,color:RED,alignSelf:'center'}}>Confirmar exclusão?</span><Btn ch="Sim, excluir" onClick={doDelete} v="red" sm/><Btn ch="Cancelar" onClick={()=>setDelConfirm(false)} v="sec" sm/></>}
+          <Btn ch="Cancelar" onClick={onCancel} v="sec" sm/>
+        </div>
       </div>
       {err&&<p style={{color:RED,fontSize:13,background:'#fff0ee',padding:'10px 14px',borderRadius:8,marginBottom:14}}>{err}</p>}
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:14}}>
@@ -357,41 +366,74 @@ function ProdForm({prod,tok,uid,fixedTotal,onSave,onCancel}){
         <Select label="Tipo" val={f.type||'product'} set={v=>s('type',v)} options={PROD_TYPES}/>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-        {F2('direct_cost',typeLabel[f.type]||typeLabel.product,'R$',f.type==='hourly'?'Custo da sua hora trabalhada':f.type==='monthly'?'Custo direto por cliente':undefined)}
+        {F2('direct_cost',typeLabel[f.type]||typeLabel.product,'R$')}
         {F2('monthly_volume',volLabel[f.type]||volLabel.product,f.type==='hourly'?'h':'un.')}
         {F2('tax_pct','Impostos','%')}
         {F2('commission_pct','Comissão','%')}
         {F2('card_fee_pct','Taxa Cartão','%')}
         {F2('default_rate_pct','Inadimplência','%')}
-        {F2('desired_margin','Margem Desejada','%','% de lucro líquido')}
+        {F2('desired_margin','Margem Desejada','%','% lucro líquido')}
         {F2('current_price',f.type==='hourly'?'Valor/Hora Atual':f.type==='monthly'?'Mensalidade Atual':'Preço Atual','R$','0 = novo')}
       </div>
-      <div style={{background:'#f8f9fc',borderRadius:10,padding:16,margin:'8px 0 20px'}}>
-        <p style={{margin:'0 0 10px',fontSize:12,fontWeight:700,color:'#888',textTransform:'uppercase'}}>Preview</p>
-        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+
+      {/* Rateio custos fixos */}
+      <div style={{background:'#f8f9fc',borderRadius:10,padding:16,marginBottom:16}}>
+        <p style={{margin:'0 0 10px',fontSize:12,fontWeight:700,color:'#888',textTransform:'uppercase'}}>Rateio de Custos Fixos</p>
+        <div style={{display:'flex',gap:8,marginBottom:10}}>
+          {[['shared','🔀 Dividir com todos'],['individual','🎯 Rateio individual']].map(([k,l])=>(
+            <button key={k} onClick={()=>s('allocation_type',k)} style={{flex:1,padding:'8px',border:`2px solid ${f.allocation_type===k?GOLD:'#ddd'}`,borderRadius:8,background:f.allocation_type===k?CREME:'#fff',cursor:'pointer',fontSize:12,fontWeight:700,color:f.allocation_type===k?NAVY:'#777'}}>{l}</button>
+          ))}
+        </div>
+        {f.allocation_type==='individual'&&<Inp label="Volume para rateio individual" val={f.allocation_qty} set={v=>s('allocation_qty',v)} pre="un." hint="Quantidade usada para calcular o custo fixo deste produto"/>}
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:8}}>
+          <Card title="Custo Fixo Rateado" value={fR(cfu)} color={YLW}/>
           <Card title="Preço Mínimo" value={fR(r.pMin)} color={RED}/>
           <Card title="Preço Ideal" value={fR(r.pIdeal)} color={GRN}/>
           <Card title="Markup" value={fN(r.mkp,2)+'×'} color={NAVY}/>
-          <Card title="PE" value={`${r.peUnits} un.`} color={NAVY}/>
         </div>
       </div>
+
       <Btn ch={loading?'Salvando...':(isNew?'💾 Salvar e Calcular':'💾 Salvar')} onClick={save} v="gold" full disabled={loading||!f.name.trim()}/>
+
+      {/* Ficha técnica */}
+      <div style={{marginTop:16}}>
+        <button onClick={()=>setShowIngs(s=>!s)} style={{background:'none',border:'none',cursor:'pointer',color:NAVY,fontWeight:700,fontSize:14,padding:0}}>
+          {showIngs?'▼':'▶'} 🧪 {showIngs?'Ocultar':'Adicionar'} Ficha Técnica (Insumos)
+        </button>
+        {showIngs&&(savedId
+          ?<IngredientsForm productId={savedId} tok={tok} uid={uid} existingIngs={ings} onSave={saved=>{setIngs(saved);}}/>
+          :<p style={{fontSize:13,color:YLW,marginTop:8}}>⚠️ Salve o produto primeiro para adicionar insumos.</p>
+        )}
+      </div>
     </div>
   );
 }
-function ProdDetail({prod,fixedTotal,onEdit,onBack}){
-  const r=calc(prod,fixedTotal),sc=SEM[r.sem]||SEM.none;
+function ProdDetail({prod,tok,fixedTotal,products,onEdit,onBack}){
+  const sharedVol=products.filter(p=>p.allocation_type!=='individual').reduce((s,p)=>s+Math.max(+p.monthly_volume||1,1),0);
+  const cfu=prod.allocation_type==='individual'?fixedTotal/Math.max(+prod.allocation_qty||1,1):sharedVol>0?(fixedTotal*Math.max(+prod.monthly_volume||1,1)/sharedVol):0;
+  const fixedShare=prod.allocation_type==='individual'?fixedTotal:fixedTotal*(Math.max(+prod.monthly_volume||1,1)/sharedVol);
+  const p2={...prod,_cfu:cfu,_fixedShare:fixedShare};
+  const r=calc(p2,cfu),sc=SEM[r.sem]||SEM.none;
   const[tab,setTab]=useState('res');
   const[dsc,setDsc]=useState('10');
   const[np,setNp]=useState('6');
   const[tx,setTx]=useState('2.99');
+  const[ings,setIngs]=useState([]);
   const vol=+prod.monthly_volume||1;
-  const typeLabel={product:'unidades',service:'serviços',hourly:'horas',monthly:'clientes'};
-  const unit=typeLabel[prod.type]||'unidades';
+  const unit={product:'unidades',service:'serviços',hourly:'horas',monthly:'clientes'}[prod.type]||'unidades';
   const d=+dsc/100,pvD=r.pIdeal*(1-d),mcD=pvD-r.cdu-pvD*(r.cvp/100);
   const mc0=r.pIdeal*(r.mcP/100),vN=mcD>0?Math.ceil((mc0*vol)/mcD):0,vA=vol>0?((vN-vol)/vol)*100:0;
   const n=Math.max(+np||1,1),tm=+tx/100,tJ=r.pIdeal*tm*n,tP=r.pIdeal+tJ,jP=(tJ/r.pIdeal)*100;
+
+  useEffect(()=>{
+    getAll('ingredients',tok,`&product_id=eq.${prod.id}`).then(res=>{
+      if(Array.isArray(res.data))setIngs(res.data);
+    });
+  },[prod.id]);
+
   const TABS=[['res','📊 Resultado'],['pe','🎯 Equilíbrio'],['dsc','💸 Desconto'],['par','💳 Parcelas']];
+  if(ings.length>0&&!TABS.find(t=>t[0]==='ing')) TABS.push(['ing','🧪 Insumos']);
+
   return(
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
@@ -414,7 +456,7 @@ function ProdDetail({prod,fixedTotal,onEdit,onBack}){
           <Card title="MC%" value={fP(r.mcP)} sub={`MC: ${fR(r.mcU)}`} color={NAVY}/>
         </div>
         <div style={{background:'#fff',borderRadius:12,padding:20}}>
-          <h4 style={{margin:'0 0 14px',color:NAVY,fontSize:14}}>Composição do Preço — {fR(r.pIdeal)}</h4>
+          <h4 style={{margin:'0 0 14px',color:NAVY,fontSize:14}}>Composição — {fR(r.pIdeal)}</h4>
           {[{l:'Custo Direto',v:r.cdu,c:'#c0392b'},{l:'Custo Fixo Rateado',v:r.cfu,c:'#e67e22'},{l:'Custos Variáveis',v:r.pIdeal*(r.cvp/100),c:'#e74c3c'},{l:`Lucro (${prod.desired_margin}%)`,v:r.pIdeal*(+prod.desired_margin/100),c:GRN}].map((b,i)=>{
             const w=r.pIdeal>0?Math.min((b.v/r.pIdeal)*100,100):0;
             return<div key={i} style={{marginBottom:10}}>
@@ -423,44 +465,39 @@ function ProdDetail({prod,fixedTotal,onEdit,onBack}){
             </div>;
           })}
         </div>
-        <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-          <div style={{flex:1,background:'#fff',borderRadius:12,padding:18,minWidth:180}}><h4 style={{margin:'0 0 8px',color:NAVY,fontSize:13}}>Custos / Unidade</h4><p style={{margin:0,fontSize:13,color:'#555'}}>Direto: <strong>{fR(r.cdu)}</strong></p><p style={{margin:'4px 0',fontSize:13,color:'#555'}}>Fixo rateado: <strong>{fR(r.cfu)}</strong></p><p style={{margin:0,fontSize:13,color:'#555'}}>CV%: <strong>{fP(r.cvp)}</strong></p></div>
-        </div>
       </>}
       {tab==='pe'&&<div style={{background:'#fff',borderRadius:12,padding:24}}>
         <h3 style={{margin:'0 0 4px',color:NAVY}}>🎯 Ponto de Equilíbrio</h3>
-        <p style={{margin:'0 0 20px',fontSize:13,color:'#888'}}>Quantidade mínima para cobrir todos os custos</p>
+        <p style={{margin:'0 0 16px',fontSize:13,color:'#888'}}>Quantidade mínima para cobrir todos os custos</p>
         <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16}}>
-          <Card title={`PE em ${unit}`} value={`${r.peUnits} ${unit}`} sub="Para cobrir custos fixos" color={NAVY}/>
-          <Card title="PE em Valor" value={fR(r.pe)} sub="Faturamento mínimo/mês" color={NAVY}/>
-          <Card title="PE +20% Segurança" value={fR(r.pe*1.2)} sub="Meta recomendada" color={GRN}/>
+          <Card title={`PE em ${unit}`} value={`${r.peUnits} ${unit}`} color={NAVY}/>
+          <Card title="PE em Valor" value={fR(r.pe)} sub="/mês" color={NAVY}/>
+          <Card title="PE +20%" value={fR(r.pe*1.2)} sub="Meta segura" color={GRN}/>
         </div>
         <div style={{background:'#f8f9fc',borderRadius:10,padding:16}}>
-          <p style={{margin:0,fontSize:13,color:'#555'}}>Você vende atualmente <strong>{vol} {unit}/mês</strong>.</p>
+          <p style={{margin:0,fontSize:13,color:'#555'}}>Você vende <strong>{vol} {unit}/mês</strong>.</p>
           {vol>=r.peUnits
-            ?<p style={{margin:'8px 0 0',fontSize:13,color:GRN,fontWeight:700}}>✅ Acima do PE! Margem de segurança: {fP((vol-r.peUnits)/r.peUnits*100)}</p>
-            :<p style={{margin:'8px 0 0',fontSize:13,color:RED,fontWeight:700}}>⚠️ Abaixo do PE! Precisa de mais {r.peUnits-vol} {unit}/mês.</p>
+            ?<p style={{margin:'8px 0 0',fontSize:13,color:GRN,fontWeight:700}}>✅ Acima do PE! Margem de segurança: {fP((vol-r.peUnits)/Math.max(r.peUnits,1)*100)}</p>
+            :<p style={{margin:'8px 0 0',fontSize:13,color:RED,fontWeight:700}}>⚠️ Abaixo do PE! Faltam {r.peUnits-vol} {unit}/mês.</p>
           }
         </div>
       </div>}
       {tab==='dsc'&&<div style={{background:'#fff',borderRadius:12,padding:24}}>
         <h3 style={{margin:'0 0 4px',color:NAVY}}>Simulador de Desconto</h3>
-        <p style={{margin:'0 0 20px',fontSize:13,color:'#888'}}>Quanto volume extra para compensar o desconto?</p>
         <Inp label="Desconto" val={dsc} set={setDsc} pre="%"/>
         <div style={{display:'flex',flexDirection:'column',gap:10}}>
           <div style={{background:'#f9f9f9',borderRadius:8,padding:'12px 16px',display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,color:'#555'}}>Preço com desconto</span><strong style={{fontSize:18,color:NAVY}}>{fR(pvD)}</strong></div>
           <div style={{background:'#f9f9f9',borderRadius:8,padding:'12px 16px',display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,color:'#555'}}>Nova MC</span><strong style={{fontSize:18,color:mcD>0?GRN:RED}}>{fR(Math.max(mcD,0))}</strong></div>
           <div style={{background:vA>100?'#fff0ee':vA>30?'#fff8e0':'#eafaee',border:`2px solid ${vA>100?RED:vA>30?YLW:GRN}`,borderRadius:8,padding:'14px 16px'}}>
-            <p style={{margin:0,fontSize:12,color:'#888'}}>Para manter o mesmo lucro você precisa vender:</p>
+            <p style={{margin:0,fontSize:12,color:'#888'}}>Para manter o lucro você precisa vender:</p>
             <p style={{margin:'4px 0',fontSize:24,fontWeight:900,color:NAVY}}>{vN} {unit}/mês</p>
-            <p style={{margin:0,fontSize:13,fontWeight:700,color:vA>100?RED:YLW}}>+{fP(vA)} a mais que hoje ({vol} {unit})</p>
+            <p style={{margin:0,fontSize:13,fontWeight:700,color:vA>100?RED:YLW}}>+{fP(vA)} a mais ({vol} {unit} hoje)</p>
             {vA>100&&<p style={{margin:'6px 0 0',fontSize:12,color:RED,fontWeight:600}}>⚠️ Praticamente inviável</p>}
           </div>
         </div>
       </div>}
       {tab==='par'&&<div style={{background:'#fff',borderRadius:12,padding:24}}>
         <h3 style={{margin:'0 0 4px',color:NAVY}}>Simulador de Parcelamento</h3>
-        <p style={{margin:'0 0 20px',fontSize:13,color:'#888'}}>Quanto custa oferecer parcelamento?</p>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Inp label="Parcelas" val={np} set={setNp} pre="×"/>
           <Inp label="Taxa mensal" val={tx} set={setTx} pre="%" hint="a.m."/>
@@ -469,6 +506,20 @@ function ProdDetail({prod,fixedTotal,onEdit,onBack}){
           <div style={{background:'#f9f9f9',borderRadius:8,padding:'12px 16px',display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,color:'#555'}}>Valor da parcela</span><strong style={{fontSize:18,color:NAVY}}>{fR(tP/n)} × {n}×</strong></div>
           <div style={{background:'#f9f9f9',borderRadius:8,padding:'12px 16px',display:'flex',justifyContent:'space-between'}}><span style={{fontSize:13,color:'#555'}}>Total pago</span><strong style={{fontSize:18,color:NAVY}}>{fR(tP)}</strong></div>
           <div style={{background:'#fff0ee',border:`2px solid ${RED}`,borderRadius:8,padding:'14px 16px'}}><p style={{margin:0,fontSize:12,color:'#888'}}>Custo financeiro (sai da sua margem)</p><p style={{margin:'4px 0',fontSize:22,fontWeight:800,color:RED}}>{fR(tJ)} ({fP(jP)})</p></div>
+        </div>
+      </div>}
+      {tab==='ing'&&ings.length>0&&<div style={{background:'#fff',borderRadius:12,padding:24}}>
+        <h3 style={{margin:'0 0 16px',color:NAVY}}>🧪 Ficha Técnica — Insumos</h3>
+        {calcRecipeIngredients(ings).map((i,idx)=>{
+          const pct=ings.reduce((s,x)=>{const uc2=+x.pkg_price>0&&+x.pkg_qty>0?(+x.pkg_price+(+x.pkg_freight||0))/+x.pkg_qty:0;return s+uc2*(1+(+x.loss_pct||0)/100)*(+x.qty_used||0);},0);
+          return<div key={idx} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #f0f0f0'}}>
+            <div><p style={{margin:0,fontSize:14,fontWeight:600,color:'#333'}}>{i.name} <span style={{fontSize:11,color:'#aaa'}}>({i.qty_used} {i.unit})</span></p><p style={{margin:'2px 0 0',fontSize:12,color:'#888'}}>Custo unit: {fR(i.uc)} · c/perda: {fR(i.ucL)}</p></div>
+            <strong style={{color:NAVY,fontSize:15}}>{fR(i.total)}</strong>
+          </div>;
+        })}
+        <div style={{marginTop:12,padding:'12px 16px',background:'#f8f9fc',borderRadius:10,display:'flex',justifyContent:'space-between'}}>
+          <span style={{fontWeight:700,color:NAVY}}>Custo Direto Total</span>
+          <strong style={{color:RED,fontSize:16}}>{fR(calcRecipeIngredients(ings).reduce((s,i)=>s+i.total,0))}</strong>
         </div>
       </div>}
     </div>
@@ -507,6 +558,7 @@ function CostsScreen({costs,tok,uid,onUpdate}){
         </div>}
       </div>
       <div style={{background:'#fff',borderRadius:12,padding:20}}>
+        <h4 style={{margin:'0 0 14px',color:NAVY,fontSize:14}}>Custos cadastrados</h4>
         {costs.length===0?<p style={{color:'#aaa',textAlign:'center',padding:'20px 0',margin:0}}>Nenhum custo cadastrado ainda.</p>
         :costs.map(c=>(
           <div key={c.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 0',borderBottom:'1px solid #f0f0f0'}}>
@@ -518,54 +570,20 @@ function CostsScreen({costs,tok,uid,onUpdate}){
           </div>
         ))}
       </div>
-      <PackageCalc/>
-    </div>
-  );
-}
-
-function Dashboard({products,costs,fixedTotal,onOpenProd}){
-  const cnt={green:0,yellow:0,red:0};
-  products.forEach(p=>{const r=calc(p,fixedTotal);if(cnt[r.sem]!==undefined)cnt[r.sem]++;});
-  const problemas=products.filter(p=>{const r=calc(p,fixedTotal);return r.sem==='red'||r.sem==='yellow';});
-  return(
-    <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <h2 style={{margin:0,color:NAVY}}>📊 Visão Geral</h2>
-      <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
-        <Card title="Produtos/Serviços" value={products.length} color={NAVY}/>
-        <Card title="Custos Fixos/Mês" value={fR(fixedTotal)} color={YLW}/>
-        <Card title="🟢 Saudável" value={cnt.green} color={GRN}/>
-        <Card title="🟡 Atenção" value={cnt.yellow} color={YLW}/>
-        <Card title="🔴 Prejuízo" value={cnt.red} color={RED}/>
-      </div>
-      {problemas.length>0&&<div style={{background:'#fff',borderRadius:12,padding:20}}>
-        <h4 style={{margin:'0 0 14px',color:RED,fontSize:14}}>⚠️ Atenção necessária</h4>
-        {problemas.map(p=>{const r=calc(p,fixedTotal),sc=SEM[r.sem];return(
-          <div key={p.id} onClick={()=>onOpenProd(p)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderRadius:10,background:sc.bg,marginBottom:8,cursor:'pointer',border:`1.5px solid ${sc.c}33`}}>
-            <div><p style={{margin:0,fontSize:14,fontWeight:700,color:'#333'}}>{sc.e} {p.name}</p><p style={{margin:'2px 0 0',fontSize:12,color:'#777'}}>Cobra {fR(p.current_price)} · Ideal: {fR(r.pIdeal)}</p></div>
-            <span style={{fontSize:12,fontWeight:700,color:sc.c}}>{sc.l} →</span>
-          </div>
-        );})}
-      </div>}
-      {products.length===0&&<div style={{background:'#fff',borderRadius:12,padding:40,textAlign:'center'}}>
-        <p style={{fontSize:40,margin:'0 0 12px'}}>📦</p>
-        <h3 style={{margin:'0 0 8px',color:NAVY}}>Comece adicionando um produto ou serviço</h3>
-        <p style={{margin:0,color:'#aaa',fontSize:14}}>Vá em "Produtos" e clique em "+ Novo".</p>
-      </div>}
     </div>
   );
 }
 
 function InfoScreen(){
   const sections=[
-    {e:'📊',t:'Dashboard',d:'Visão geral de todos os seus produtos. O semáforo mostra quais precisam de atenção.'},
-    {e:'📦',t:'Produtos / Serviços',d:'Cadastre produtos, serviços, serviços por hora ou mensalidades. O sistema calcula automaticamente preço mínimo, ideal, markup e ponto de equilíbrio.'},
-    {e:'💰',t:'Custos Fixos',d:'Cadastre todos os custos fixos mensais. Eles são rateados automaticamente por produto. Use a lista de sugestões ou crie personalizado.'},
-    {e:'🍽️',t:'Ficha Técnica',d:'Para produtos com vários insumos (ramo alimentício). Liste ingredientes, quantidades e perdas — o custo unitário é calculado automaticamente.'},
-    {e:'📦',t:'Custo de Pacote',d:'Na aba Custos Fixos você encontra a calculadora de custo unitário para itens comprados em pacote, incluindo frete e percentual de perda.'},
-    {e:'🎯',t:'Ponto de Equilíbrio',d:'Dentro de cada produto, veja exatamente quantas unidades/horas/serviços precisa vender por mês para cobrir todos os custos.'},
-    {e:'💸',t:'Simulador de Desconto',d:'Antes de dar um desconto, veja quanto volume extra precisaria vender para compensar. Evita prejuízo por impulso.'},
-    {e:'💳',t:'Simulador de Parcelas',d:'Calcule o custo real de oferecer parcelamento e quanto sai da sua margem se você absorver os juros.'},
-    {e:'🟢',t:'Semáforo de Lucratividade',d:'Verde = saudável. Amarelo = margem comprimida. Vermelho = prejuízo. Compara com o preço atual praticado.'},
+    {e:'📊',t:'Dashboard',d:'Visão geral com semáforo, ponto de equilíbrio geral e médias de todos os produtos.'},
+    {e:'📦',t:'Produtos / Serviços',d:'Cadastre produtos, serviços, serviços por hora ou mensalidades. Cada um tem seu preço mínimo, ideal, markup e PE calculados automaticamente.'},
+    {e:'🧪',t:'Ficha Técnica',d:'Dentro de cada produto, clique em "Adicionar Ficha Técnica" para listar insumos com quantidades, perdas e custos — o custo direto é calculado automaticamente.'},
+    {e:'💰',t:'Custos Fixos',d:'Cadastre os custos fixos mensais. Escolha entre rateio compartilhado (divide entre todos os produtos) ou individual (você define a base de rateio).'},
+    {e:'🎯',t:'Ponto de Equilíbrio',d:'Dentro de cada produto veja o PE individual. No Dashboard veja o PE geral da empresa com todas as informações consolidadas.'},
+    {e:'💸',t:'Simulador de Desconto',d:'Antes de dar desconto, veja quanto volume extra você precisaria vender para compensar.'},
+    {e:'💳',t:'Simulador de Parcelas',d:'Calcule o custo real do parcelamento e quanto sai da sua margem.'},
+    {e:'🟢',t:'Semáforo',d:'Verde = saudável. Amarelo = margem comprimida. Vermelho = prejuízo. Compara com o preço atual praticado.'},
   ];
   return(
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
@@ -590,6 +608,73 @@ function InfoScreen(){
     </div>
   );
 }
+function Dashboard({products,costs,fixedTotal,onOpenProd}){
+  const withCfu=calcFixed(products,fixedTotal);
+  const cnt={green:0,yellow:0,red:0};
+  withCfu.forEach(p=>{const r=calc(p,p._cfu);if(cnt[r.sem]!==undefined)cnt[r.sem]++;});
+  const problemas=withCfu.filter(p=>{const r=calc(p,p._cfu);return r.sem==='red'||r.sem==='yellow';});
+
+  // PE Geral
+  const totalMcU=withCfu.reduce((s,p)=>{const r=calc(p,p._cfu);return s+(r.mcU>0?r.mcU*(+p.monthly_volume||1):0);},0);
+  const totalVol=withCfu.reduce((s,p)=>s+(+p.monthly_volume||1),0);
+  const avgMcPct=withCfu.reduce((s,p)=>{const r=calc(p,p._cfu);return s+r.mcP;},0)/Math.max(withCfu.length,1);
+  const peGeral=avgMcPct>0?fixedTotal/(avgMcPct/100):0;
+  const faturamentoAtual=withCfu.reduce((s,p)=>{const r=calc(p,p._cfu);const pv=+p.current_price>0?+p.current_price:r.pIdeal;return s+pv*(+p.monthly_volume||1);},0);
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <h2 style={{margin:0,color:NAVY}}>📊 Visão Geral</h2>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+        <Card title="Produtos/Serviços" value={products.length} color={NAVY}/>
+        <Card title="Custos Fixos/Mês" value={fR(fixedTotal)} color={YLW}/>
+        <Card title="🟢 Saudável" value={cnt.green} color={GRN}/>
+        <Card title="🟡 Atenção" value={cnt.yellow} color={YLW}/>
+        <Card title="🔴 Prejuízo" value={cnt.red} color={RED}/>
+      </div>
+
+      {/* PE Geral */}
+      {products.length>0&&(
+        <div style={{background:'#fff',borderRadius:12,padding:24}}>
+          <h4 style={{margin:'0 0 16px',color:NAVY,fontSize:15}}>🎯 Ponto de Equilíbrio Geral da Empresa</h4>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16}}>
+            <Card title="PE em Faturamento" value={fR(peGeral)} sub="Mínimo para cobrir custos" color={NAVY}/>
+            <Card title="PE +20% Segurança" value={fR(peGeral*1.2)} sub="Meta recomendada" color={GRN}/>
+            <Card title="Faturamento Atual Est." value={fR(faturamentoAtual)} sub="Baseado nos preços atuais" color={faturamentoAtual>=peGeral?GRN:RED}/>
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
+            <Card title="MC% Média" value={fP(avgMcPct)} sub="Média entre produtos" color={NAVY}/>
+            <Card title="Total Custos Fixos" value={fR(fixedTotal)} sub="/mês" color={YLW}/>
+            <Card title="Volume Total/Mês" value={`${totalVol} un.`} sub="Soma de todos produtos" color={NAVY}/>
+          </div>
+          <div style={{background:faturamentoAtual>=peGeral*1.2?'#eafaee':faturamentoAtual>=peGeral?'#fff8e0':'#fff0ee',border:`2px solid ${faturamentoAtual>=peGeral*1.2?GRN:faturamentoAtual>=peGeral?YLW:RED}`,borderRadius:10,padding:'14px 18px'}}>
+            {faturamentoAtual>=peGeral*1.2
+              ?<p style={{margin:0,fontSize:14,fontWeight:700,color:GRN}}>✅ Empresa saudável! Faturamento {fP((faturamentoAtual-peGeral)/peGeral*100)} acima do PE.</p>
+              :faturamentoAtual>=peGeral
+              ?<p style={{margin:0,fontSize:14,fontWeight:700,color:YLW}}>⚠️ Acima do PE, mas abaixo da margem de segurança. Faltam {fR(peGeral*1.2-faturamentoAtual)}/mês para a meta.</p>
+              :<p style={{margin:0,fontSize:14,fontWeight:700,color:RED}}>🔴 Abaixo do PE! Faltam {fR(peGeral-faturamentoAtual)}/mês para cobrir os custos fixos.</p>
+            }
+          </div>
+        </div>
+      )}
+
+      {problemas.length>0&&<div style={{background:'#fff',borderRadius:12,padding:20}}>
+        <h4 style={{margin:'0 0 14px',color:RED,fontSize:14}}>⚠️ Atenção necessária</h4>
+        {problemas.map(p=>{const r=calc(p,p._cfu),sc=SEM[r.sem];return(
+          <div key={p.id} onClick={()=>onOpenProd(p)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderRadius:10,background:sc.bg,marginBottom:8,cursor:'pointer',border:`1.5px solid ${sc.c}33`}}>
+            <div><p style={{margin:0,fontSize:14,fontWeight:700,color:'#333'}}>{sc.e} {p.name}</p><p style={{margin:'2px 0 0',fontSize:12,color:'#777'}}>Cobra {fR(p.current_price)} · Ideal: {fR(calc(p,p._cfu).pIdeal)}</p></div>
+            <span style={{fontSize:12,fontWeight:700,color:sc.c}}>{sc.l} →</span>
+          </div>
+        );})}
+      </div>}
+
+      {products.length===0&&<div style={{background:'#fff',borderRadius:12,padding:40,textAlign:'center'}}>
+        <p style={{fontSize:40,margin:'0 0 12px'}}>📦</p>
+        <h3 style={{margin:'0 0 8px',color:NAVY}}>Comece adicionando um produto ou serviço</h3>
+        <p style={{margin:0,color:'#aaa',fontSize:14}}>Vá em "Produtos" e clique em "+ Novo".</p>
+      </div>}
+    </div>
+  );
+}
 
 function App(){
   const[session,setSession]=useState(null);
@@ -602,6 +687,7 @@ function App(){
   const[loading,setLoading]=useState(false);
   const tok=session?.token,uid=session?.user?.id;
   const fixedTotal=costs.reduce((s,c)=>s+(+c.amount||0),0);
+
   const load=useCallback(async()=>{
     if(!tok)return;setLoading(true);
     const[pr,cr]=await Promise.all([getAll('products',tok),getAll('fixed_costs',tok)]);
@@ -609,10 +695,13 @@ function App(){
     if(Array.isArray(cr.data))setCosts(cr.data);
     setLoading(false);
   },[tok]);
+
   useEffect(()=>{load();},[load]);
+
   if(!session)return<AuthScreen onAuth={s=>{setSession(s);setScreen('dash');}}/>;
   const goto=s=>{setScreen(s);setSelected(null);setEditing(null);setAdding(false);};
-  const NAV=[['dash','📊','Início'],['products','📦','Produtos'],['costs','💰','Custos'],['recipe','🍽️','Ficha'],['info','ℹ️','Sobre']];
+  const NAV=[['dash','📊','Início'],['products','📦','Produtos'],['costs','💰','Custos'],['info','ℹ️','Sobre']];
+
   return(
     <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",background:'#F0F2F8',minHeight:'100vh'}}>
       <div style={{background:NAVY,padding:'0 16px',display:'flex',alignItems:'center',justifyContent:'space-between',height:52,position:'sticky',top:0,zIndex:10}}>
@@ -631,9 +720,9 @@ function App(){
         {loading&&<p style={{color:'#aaa',textAlign:'center'}}>Carregando...</p>}
         {screen==='dash'&&!loading&&<Dashboard products={products} costs={costs} fixedTotal={fixedTotal} onOpenProd={p=>{setSelected(p);setScreen('products');}}/>}
         {screen==='products'&&!loading&&<>
-          {editing?<ProdForm prod={editing} tok={tok} uid={uid} fixedTotal={fixedTotal} onSave={saved=>{load();setEditing(null);setSelected(saved);}} onCancel={()=>setEditing(null)}/>
-          :adding?<ProdForm tok={tok} uid={uid} fixedTotal={fixedTotal} onSave={saved=>{load();setAdding(false);setSelected(saved);}} onCancel={()=>setAdding(false)}/>
-          :selected?<ProdDetail prod={selected} fixedTotal={fixedTotal} onEdit={()=>setEditing(selected)} onBack={()=>setSelected(null)}/>
+          {editing?<ProdForm prod={editing} tok={tok} uid={uid} products={products} fixedTotal={fixedTotal} onSave={saved=>{load();setEditing(null);setSelected(saved);}} onCancel={()=>setEditing(null)} onDelete={()=>{load();setEditing(null);setSelected(null);}}/>
+          :adding?<ProdForm tok={tok} uid={uid} products={products} fixedTotal={fixedTotal} onSave={saved=>{load();setAdding(false);setSelected(saved);}} onCancel={()=>setAdding(false)} onDelete={()=>{}}/>
+          :selected?<ProdDetail prod={selected} tok={tok} fixedTotal={fixedTotal} products={products} onEdit={()=>setEditing(selected)} onBack={()=>setSelected(null)}/>
           :<div style={{display:'flex',flexDirection:'column',gap:16}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <h2 style={{margin:0,color:NAVY}}>📦 Produtos / Serviços</h2>
@@ -644,20 +733,20 @@ function App(){
               <h3 style={{margin:'0 0 8px',color:NAVY}}>Nenhum item ainda</h3>
               <Btn ch="+ Criar Primeiro" onClick={()=>setAdding(true)} v="gold"/>
             </div>
-            :products.map(p=>{const r=calc(p,fixedTotal),sc=SEM[r.sem]||SEM.none,tl=PROD_TYPES.find(t=>t.k===p.type);return(
-              <div key={p.id} style={{background:'#fff',borderRadius:12,padding:'16px 20px',boxShadow:'0 2px 6px #0001',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:`5px solid ${sc.c}`}}>
-                <div onClick={()=>setSelected(p)} style={{flex:1,cursor:'pointer'}}>
-                  <p style={{margin:0,fontSize:15,fontWeight:700,color:NAVY}}>{sc.e} {p.name} <span style={{fontSize:11,color:'#aaa',fontWeight:400}}>{tl?.l}</span></p>
-                  <p style={{margin:'3px 0 0',fontSize:12,color:'#aaa'}}>Ideal: {fR(r.pIdeal)} · MC%: {fP(r.mcP)} · PE: {r.peUnits} un.</p>
+            :products.map(p=>{
+              const withCfu=calcFixed(products,fixedTotal);
+              const pWithCfu=withCfu.find(x=>x.id===p.id)||p;
+              const r=calc(pWithCfu,pWithCfu._cfu),sc=SEM[r.sem]||SEM.none,tl=PROD_TYPES.find(t=>t.k===p.type);
+              return(
+                <div key={p.id} onClick={()=>setSelected(p)} style={{background:'#fff',borderRadius:12,padding:'16px 20px',cursor:'pointer',boxShadow:'0 2px 6px #0001',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:`5px solid ${sc.c}`}}>
+                  <div><p style={{margin:0,fontSize:15,fontWeight:700,color:NAVY}}>{sc.e} {p.name} <span style={{fontSize:11,color:'#aaa',fontWeight:400}}>{tl?.l}</span></p><p style={{margin:'3px 0 0',fontSize:12,color:'#aaa'}}>Ideal: {fR(r.pIdeal)} · MC%: {fP(r.mcP)} · PE: {r.peUnits} un.</p></div>
+                  <div style={{textAlign:'right'}}><p style={{margin:0,fontSize:13,fontWeight:700,color:sc.c}}>{sc.l}</p><p style={{margin:'2px 0 0',fontSize:12,color:'#aaa'}}>→</p></div>
                 </div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:13,fontWeight:700,color:sc.c}}>{sc.l}</span>
-                  <button onClick={async(e)=>{e.stopPropagation();if(window.confirm(`Excluir "${p.name}"?`)){await del('products',tok,p.id);load();}}} style={{background:'#fff0ee',border:'1px solid #ecc',borderRadius:6,color:RED,cursor:'pointer',fontSize:11,fontWeight:700,padding:'4px 8px'}}>Excluir</button>
-                </div>
-              </div>
-            );})}
+              );
+            })}
+          </div>}
+        </>}
         {screen==='costs'&&!loading&&<CostsScreen costs={costs} tok={tok} uid={uid} onUpdate={load}/>}
-        {screen==='recipe'&&!loading&&<RecipeCalc fixedTotal={fixedTotal}/>}
         {screen==='info'&&<InfoScreen/>}
       </div>
     </div>
