@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 const SB  = 'https://fjvomoxzeyheyvxwwkyf.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqdm9tb3h6ZXloZXl2eHd3a3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NTk5NjcsImV4cCI6MjA4ODEzNTk2N30.6LWSBToqzXm162QoNSpw52y8YUcHZLy_4dlkzEGvPmw';
 const NAVY='#0F2744',GOLD='#C9A84C',GRN='#1A6B2A',RED='#B0291E',YLW='#B8860B',CREME='#FFF8E7';
-const ADMIN_EMAIL='rafaelquessa@gmail.com'; // ← seu email de admin
+const ADMIN_EMAIL='jrrafaelcontador@gmail.com'; // ← seu email de admin
 
 // ── API ──────────────────────────────────────────────────────
 async function req(path,opts={},tok=null){
@@ -594,7 +594,7 @@ ${costs.length>0?`<div class="st">💰 Custos Fixos Mensais</div>
 <table><thead><tr><th>Descrição</th><th>Valor Mensal</th><th>% do Total</th></tr></thead>
 <tbody>${costs.map(c=>`<tr><td>${c.name}</td><td><strong>${fR(c.amount)}</strong></td><td>${fixedTotal>0?fP((c.amount/fixedTotal)*100):'—'}</td></tr>`).join('')}
 <tr style="background:#f0f4ff;"><td><strong>TOTAL</strong></td><td><strong style="color:#0F2744;">${fR(fixedTotal)}</strong></td><td><strong>100%</strong></td></tr></tbody></table>`:''}
-<div class="footer"><span>Precificação Inteligente · Método dos 3Cs · Rafael Quessa Contador</span><span>rafaelquessacontador.com.br</span></div>
+<div class="footer"><span>Precificação Inteligente · Método dos 3Cs · Rafael Quessa Contador</span><span>jrrafaelcontadorcontador.com.br</span></div>
 <div class="no-print" style="margin-top:20px;text-align:center;">
   <button onclick="window.print()" style="background:#0F2744;color:#fff;border:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>
   <button onclick="window.close()" style="background:#e8e8e8;color:#444;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-left:10px;">✕ Fechar</button>
